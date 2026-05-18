@@ -1,20 +1,16 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Any
 from uuid import UUID
 from datetime import datetime
 
 
 class CreateSessionRequest(BaseModel):
-    ideal_person: Optional[str] = None
-    favourite_celebrity: Optional[str] = None
-    celebrity_to_talk: Optional[str] = None
+    onboarding_data: dict[str, Any] = {}
 
 
 class SessionResponse(BaseModel):
     id: UUID
-    ideal_person: Optional[str]
-    favourite_celebrity: Optional[str]
-    celebrity_to_talk: Optional[str]
+    onboarding_data: dict[str, Any] = {}
     created_at: datetime
 
     model_config = {"from_attributes": True}

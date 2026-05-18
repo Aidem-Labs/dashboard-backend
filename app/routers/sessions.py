@@ -34,9 +34,7 @@ async def get_my_session(user_id: str = Depends(_get_user_id)):
 @router.post("/session", response_model=SessionResponse)
 async def create_session(request: CreateSessionRequest, user_id: str = Depends(_get_user_id)):
     session = await session_service.create_session(
-        ideal_person=request.ideal_person,
-        favourite_celebrity=request.favourite_celebrity,
-        celebrity_to_talk=request.celebrity_to_talk,
+        onboarding_data=request.onboarding_data,
         user_id=user_id,
     )
     return session

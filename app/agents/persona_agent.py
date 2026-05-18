@@ -15,10 +15,11 @@ class AgentState(TypedDict):
     tweets: list[dict]
     user_message: str
     assistant_reply: str
+    user_context: str
 
 
-def _build_system_prompt(personas: list[str], profiles: list[dict], tweets: list[dict]) -> str:
-    """Build system prompt combining stored personality + fresh tweets."""
+def _build_system_prompt(personas: list[str], profiles: list[dict], tweets: list[dict], user_context: str = "") -> str:
+    """Build system prompt combining stored personality + fresh tweets + user context."""
     persona_names = " and ".join(personas) if len(personas) <= 2 else ", ".join(personas[:-1]) + f", and {personas[-1]}"
 
     # Build personality context from stored data
@@ -60,7 +61,12 @@ IMPORTANT RULES:
 
 Respond to the user as {persona_names} would."""
 
-    return prompt + "\n" + get_relational_system_prompt()
+    prompt += "\n" + get_relational_system_prompt()
+
+    if user_context:
+        prompt += f"\n\n{user_context}"
+
+    return prompt
 
 
 async def fetch_profiles_node(state: AgentState) -> dict:
@@ -105,7 +111,7 @@ async def fetch_tweets_node(state: AgentState) -> dict:
 
 
 async def generate_reply_node(state: AgentState) -> dict:
-    """Generate response using BOTH stored personality + fresh tweets."""
+    """Generate response using BOTH stored personality + fresh tweets + user context."""
     print("\n" + "="*80)
     print("💬 AGENT NODE 3: GENERATING AI RESPONSE")
     print("="*80)
@@ -121,6 +127,7 @@ async def generate_reply_node(state: AgentState) -> dict:
         state["personas"],
         state["stored_profiles"],
         state["tweets"],
+        state.get("user_context", ""),
     )
 
     # Get chat history

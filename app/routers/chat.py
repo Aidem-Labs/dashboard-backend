@@ -9,9 +9,62 @@ router = APIRouter(prefix="/api", tags=["chat"])
 agent_graph = build_agent_graph()
 
 
+def _extract_personas(onboarding_data: dict) -> list[str]:
+    """Extract persona names from onboarding answers."""
+    personas = []
+    inspiration = onboarding_data.get("inspirationFigure", "")
+    actor_author = onboarding_data.get("actorAuthorStyle", "")
+
+    if inspiration:
+        # Take first name before any comma or parenthesis
+        name = inspiration.split(",")[0].split("(")[0].strip()
+        if name:
+            personas.append(name)
+    if actor_author:
+        name = actor_author.split(",")[0].split("(")[0].strip()
+        if name:
+            personas.append(name)
+
+    # Remove duplicates
+    seen = set()
+    personas = [p for p in personas if not (p.lower() in seen or seen.add(p.lower()))]
+    return personas if personas else ["Assistant"]
+
+
+def _build_user_context(onboarding_data: dict) -> str:
+    """Build user context string from onboarding answers for the agent."""
+    if not onboarding_data:
+        return ""
+
+    mapping = {
+        "inspirationFigure": "Person they look up to",
+        "inspirationQuality": "What they admire about that person",
+        "actorAuthorStyle": "Actors/authors whose style resonates",
+        "actorAuthorTone": "What connects with them about that style",
+        "spiritualPractices": "Spiritual practices or values important to them",
+        "spiritualReflection": "How they want their companion to honor that",
+        "lifeLandscape": "How their current life chapter feels (metaphor)",
+        "safePlace": "What a safe place looks like for them",
+        "strengthSymbol": "A symbol of strength or peace for them",
+        "sensoryAnchor": "Sounds, colors, textures that ground them",
+        "chapterTitle": "Title they'd give this chapter of their life",
+        "strengthMoment": "A recent moment they felt their best",
+        "primaryHope": "Biggest shift or hope for this journey",
+        "copingPattern": "What they do when feeling overwhelmed",
+    }
+
+    context_parts = ["USER CONTEXT (from onboarding):"]
+    for key, label in mapping.items():
+        value = onboarding_data.get(key)
+        if value:
+            context_parts.append(f"- {label}: {value}")
+
+    return "\n".join(context_parts)
+
+
 @router.post("/chat")
 async def chat(request: ChatRequest):
-    """Send a message and get a persona-based response."""
+    """Send a message and get a persona-based response. Public endpoint (no auth)."""
     print("\n" + "="*80)
     print("🚀 CHAT ENDPOINT HIT - STARTING AGENT WORKFLOW")
     print("="*80)
@@ -19,28 +72,22 @@ async def chat(request: ChatRequest):
     print(f"💬 User message: {request.message}")
     print("⏳ Fetching session and initializing agent...")
     
-    # Get session to know which personas to use
+    # Get session to know about user
     session = await session_service.get_session(str(request.session_id))
     if not session:
         return {"error": "Session not found"}
 
-    # Build list of personas from session
-    personas = []
-    if session.get("ideal_person"):
-        personas.append(session["ideal_person"])
-    if session.get("favourite_celebrity"):
-        personas.append(session["favourite_celebrity"])
-    if session.get("celebrity_to_talk"):
-        personas.append(session["celebrity_to_talk"])
+    onboarding_data = session.get("onboarding_data", {}) or {}
 
-    # Remove duplicates while keeping order
-    seen = set()
-    personas = [p for p in personas if not (p.lower() in seen or seen.add(p.lower()))]
-
-    if not personas:
-        personas = ["Assistant"]
+    # Extract personas from onboarding answers
+    personas = _extract_personas(onboarding_data)
+    
+    # Build user context for the agent
+    user_context = _build_user_context(onboarding_data)
     
     print(f"👤 Active personas: {', '.join(personas)}")
+    if user_context:
+        print(f"📋 User context loaded from onboarding")
     print("="*80)
 
     # Run the agent graph
@@ -52,6 +99,7 @@ async def chat(request: ChatRequest):
         "tweets": [],
         "user_message": request.message,
         "assistant_reply": "",
+        "user_context": user_context,
     })
     
     print("\n" + "="*80)

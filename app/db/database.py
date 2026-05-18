@@ -35,9 +35,7 @@ async def init_db():
                 CREATE TABLE sessions (
                     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
                     user_id UUID,
-                    ideal_person TEXT,
-                    favourite_celebrity TEXT,
-                    celebrity_to_talk TEXT,
+                    onboarding_data JSONB DEFAULT '{}',
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 );
@@ -47,6 +45,7 @@ async def init_db():
             print("Created table: sessions")
         else:
             await conn.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_id UUID;")
+            await conn.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS onboarding_data JSONB DEFAULT '{}';")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);")
 
         if "persona_configs" not in existing_names:

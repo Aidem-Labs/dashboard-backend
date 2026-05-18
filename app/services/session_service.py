@@ -5,23 +5,19 @@ from app.db.database import get_pool
 
 
 async def create_session(
-    ideal_person: Optional[str],
-    favourite_celebrity: Optional[str],
-    celebrity_to_talk: Optional[str],
+    onboarding_data: dict = {},
     user_id: Optional[str] = None,
 ) -> dict:
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            INSERT INTO sessions (user_id, ideal_person, favourite_celebrity, celebrity_to_talk)
-            VALUES ($1, $2, $3, $4)
-            RETURNING id, ideal_person, favourite_celebrity, celebrity_to_talk, created_at
+            INSERT INTO sessions (user_id, onboarding_data)
+            VALUES ($1, $2)
+            RETURNING id, onboarding_data, created_at
             """,
             user_id,
-            ideal_person,
-            favourite_celebrity,
-            celebrity_to_talk,
+            json.dumps(onboarding_data),
         )
     return dict(row)
 
