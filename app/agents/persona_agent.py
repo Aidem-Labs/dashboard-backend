@@ -72,16 +72,16 @@ Respond to the user as {persona_names} would."""
 async def fetch_profiles_node(state: AgentState) -> dict:
     """Get pre-stored personality data from DB (cheap, always available)."""
     print("\n" + "="*80)
-    print("👥 AGENT NODE 1: FETCHING CELEBRITY PROFILES")
+    print("AGENT NODE 1: FETCHING CELEBRITY PROFILES")
     print("="*80)
-    print(f"📋 Personas: {', '.join(state['personas'])}")
-    print("⏳ Fetching personality profiles from database...")
+    print(f" Personas: {', '.join(state['personas'])}")
+    print(" Fetching personality profiles from database...")
     
     profiles = await get_multiple_celebrity_profiles(state["personas"])
     
-    print(f"✅ Successfully fetched {len(profiles)} profiles")
+    print(f" Successfully fetched {len(profiles)} profiles")
     for profile in profiles:
-        print(f"   → {profile['name']}: {profile['personality_traits'][:50]}...")
+        print(f"   -> {profile['name']}: {profile['personality_traits'][:50]}...")
     print("="*80 + "\n")
     
     return {"stored_profiles": profiles}
@@ -90,21 +90,21 @@ async def fetch_profiles_node(state: AgentState) -> dict:
 async def fetch_tweets_node(state: AgentState) -> dict:
     """Fetch fresh tweets from Twitter API (real-time data)."""
     print("\n" + "="*80)
-    print("🐦 AGENT NODE 2: FETCHING FRESH TWEETS")
+    print(" AGENT NODE 2: FETCHING FRESH TWEETS")
     print("="*80)
-    print(f"📋 Fetching tweets for: {', '.join(state['personas'])}")
-    print("⏳ Starting tweet scraping...")
+    print(f" Fetching tweets for: {', '.join(state['personas'])}")
+    print(" Starting tweet scraping...")
     
     all_tweets = []
     for persona in state["personas"]:
-        print(f"\n   → Fetching tweets for: {persona}")
+        print(f"\n   -> Fetching tweets for: {persona}")
         tweets = await fetch_celebrity_tweets(persona, count=10)
         for t in tweets:
             t["persona"] = persona
         all_tweets.extend(tweets)
-        print(f"   ✅ Got {len(tweets)} tweets for {persona}")
+        print(f"    Got {len(tweets)} tweets for {persona}")
     
-    print(f"\n✅ Total tweets collected: {len(all_tweets)}")
+    print(f"\n Total tweets collected: {len(all_tweets)}")
     print("="*80 + "\n")
     
     return {"tweets": all_tweets}
@@ -113,13 +113,13 @@ async def fetch_tweets_node(state: AgentState) -> dict:
 async def generate_reply_node(state: AgentState) -> dict:
     """Generate response using BOTH stored personality + fresh tweets + user context."""
     print("\n" + "="*80)
-    print("💬 AGENT NODE 3: GENERATING AI RESPONSE")
+    print(" AGENT NODE 3: GENERATING AI RESPONSE")
     print("="*80)
-    print(f"👤 Personas: {', '.join(state['personas'])}")
-    print(f"📊 Profiles loaded: {len(state['stored_profiles'])}")
-    print(f"🐦 Tweets loaded: {len(state['tweets'])}")
-    print(f"💭 User message: {state['user_message']}")
-    print("⏳ Building system prompt and calling AI...")
+    print(f" Personas: {', '.join(state['personas'])}")
+    print(f" Profiles loaded: {len(state['stored_profiles'])}")
+    print(f" Tweets loaded: {len(state['tweets'])}")
+    print(f" User message: {state['user_message']}")
+    print(" Building system prompt and calling AI...")
     
     llm = HuggingFaceLLM()
 
@@ -136,10 +136,10 @@ async def generate_reply_node(state: AgentState) -> dict:
     messages.extend(history)
     messages.append({"role": "user", "content": state["user_message"]})
 
-    print("\n⏳ Calling HuggingFace AI model...")
+    print("\n Calling HuggingFace AI model...")
     reply = await llm.generate(messages)
     
-    print(f"\n✅ AI Response generated! ({len(reply)} characters)")
+    print(f"\n AI Response generated! ({len(reply)} characters)")
     print("="*80 + "\n")
     
     return {"assistant_reply": reply}
@@ -148,17 +148,19 @@ async def generate_reply_node(state: AgentState) -> dict:
 async def save_messages_node(state: AgentState) -> dict:
     """Save user message and assistant reply to database."""
     print("\n" + "="*80)
-    print("💾 AGENT NODE 4: SAVING MESSAGES TO DATABASE")
+    print(" AGENT NODE 4: SAVING MESSAGES TO DATABASE")
     print("="*80)
-    print(f"📝 Session ID: {state['session_id']}")
-    print(f"💬 User message: {state['user_message'][:50]}...")
-    print(f"🤖 Assistant reply: {state['assistant_reply'][:50]}...")
-    print("⏳ Saving to database...")
+    print(f" Session ID: {state['session_id']}")
+    safe_msg = state['user_message'][:50].encode('ascii', 'replace').decode('ascii')
+    safe_reply = state['assistant_reply'][:50].encode('ascii', 'replace').decode('ascii')
+    print(f" User message: {safe_msg}...")
+    print(f" Assistant reply: {safe_reply}...")
+    print(" Saving to database...")
     
     await save_message(state["session_id"], "user", state["user_message"])
     await save_message(state["session_id"], "assistant", state["assistant_reply"])
     
-    print("✅ Messages saved successfully!")
+    print(" Messages saved successfully!")
     print("="*80 + "\n")
     
     return {}
@@ -185,7 +187,7 @@ def build_agent_graph():
     # Profile and tweet fetching happen in sequence (can be parallel later)
     graph.add_edge("fetch_profiles", "fetch_tweets")
 
-    # Both sources combined → generate reply
+    # Both sources combined -> generate reply
     graph.add_edge("fetch_tweets", "generate_reply")
     graph.add_edge("generate_reply", "save_messages")
     graph.add_edge("save_messages", END)

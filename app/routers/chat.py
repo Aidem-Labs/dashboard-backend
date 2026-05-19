@@ -1,7 +1,19 @@
+import json
+import re
+from uuid import UUID
 from fastapi import APIRouter
 from app.models.schemas import ChatRequest, ChatResponse
 from app.agents.persona_agent import build_agent_graph
 from app.services import session_service
+
+
+UUID_PATTERN = re.compile(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I
+)
+
+
+def _is_valid_uuid(value: str) -> bool:
+    return bool(UUID_PATTERN.match(value))
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -66,18 +78,35 @@ def _build_user_context(onboarding_data: dict) -> str:
 async def chat(request: ChatRequest):
     """Send a message and get a persona-based response. Public endpoint (no auth)."""
     print("\n" + "="*80)
-    print("🚀 CHAT ENDPOINT HIT - STARTING AGENT WORKFLOW")
+    print("CHAT ENDPOINT HIT - STARTING AGENT WORKFLOW")
     print("="*80)
-    print(f"📝 Session ID: {request.session_id}")
-    print(f"💬 User message: {request.message}")
-    print("⏳ Fetching session and initializing agent...")
+    print(f"Session ID: {request.session_id}")
+    print(f"User message: {request.message}")
+    print("Fetching session and initializing agent...")
     
     # Get session to know about user
-    session = await session_service.get_session(str(request.session_id))
+    session = None
+    if _is_valid_uuid(request.session_id):
+        session = await session_service.get_session(request.session_id)
+
+    # If session doesn't exist but onboarding_data is provided, create one on the fly
     if not session:
-        return {"error": "Session not found"}
+        if request.onboarding_data:
+            session = await session_service.create_session(
+                onboarding_data=request.onboarding_data,
+                user_id=None,
+            )
+            # Re-fetch so we have the full row
+            session = await session_service.get_session(str(session["id"]))
+        if not session:
+            return {"error": "Session not found"}
 
     onboarding_data = session.get("onboarding_data", {}) or {}
+    if isinstance(onboarding_data, str):
+        try:
+            onboarding_data = json.loads(onboarding_data)
+        except (json.JSONDecodeError, TypeError):
+            onboarding_data = {}
 
     # Extract personas from onboarding answers
     personas = _extract_personas(onboarding_data)
@@ -85,15 +114,16 @@ async def chat(request: ChatRequest):
     # Build user context for the agent
     user_context = _build_user_context(onboarding_data)
     
-    print(f"👤 Active personas: {', '.join(personas)}")
+    print(f"Active personas: {', '.join(personas)}")
     if user_context:
-        print(f"📋 User context loaded from onboarding")
+        print(f"User context loaded from onboarding")
     print("="*80)
 
     # Run the agent graph
-    print("\n⏳ Running LangGraph agent workflow...")
+    print("\nRunning LangGraph agent workflow...")
+    actual_session_id = session["id"] if isinstance(session, dict) else request.session_id
     result = await agent_graph.ainvoke({
-        "session_id": str(request.session_id),
+        "session_id": str(actual_session_id),
         "personas": personas,
         "stored_profiles": [],
         "tweets": [],
@@ -103,12 +133,12 @@ async def chat(request: ChatRequest):
     })
     
     print("\n" + "="*80)
-    print("✅ CHAT WORKFLOW COMPLETED SUCCESSFULLY")
-    print(f"📝 Response length: {len(result['assistant_reply'])} characters")
+    print("CHAT WORKFLOW COMPLETED SUCCESSFULLY")
+    print(f"Response length: {len(result['assistant_reply'])} characters")
     print("="*80 + "\n")
 
     return ChatResponse(
-        session_id=request.session_id,
+        session_id=str(actual_session_id),
         response=result["assistant_reply"],
         personas=personas,
     )

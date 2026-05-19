@@ -17,12 +17,13 @@ class SessionResponse(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    session_id: UUID
+    session_id: str
     message: str
+    onboarding_data: dict[str, Any] = {}
 
 
 class ChatResponse(BaseModel):
-    session_id: UUID
+    session_id: str
     response: str
     personas: list[str]
     sources: list[str] = []
