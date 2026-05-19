@@ -12,6 +12,8 @@ class KetamineAgentState(TypedDict):
     assistant_reply: str
     safety_triggered: bool
     sources: list[str]
+    persona_profile: str          # Communication style guide from persona agent
+    user_context_str: str         # Logged-in user info (name, disease, etc.)
 
 
 # Only genuine crisis language triggers the safety response
@@ -27,7 +29,7 @@ EMERGENCY_RESPONSE = (
 )
 
 
-def _build_ketamine_system_prompt(chunks: list[dict]) -> str:
+def _build_ketamine_system_prompt(chunks: list[dict], persona_profile: str = "", user_context_str: str = "") -> str:
     if chunks:
         doc_context = "\n\n--- KNOWLEDGE BASE ---\n"
         for chunk in chunks:
@@ -36,7 +38,17 @@ def _build_ketamine_system_prompt(chunks: list[dict]) -> str:
     else:
         doc_context = ""
 
+    persona_section = ""
+    if persona_profile:
+        persona_section = f"\n\n--- COMMUNICATION STYLE GUIDE (from user onboarding) ---\n{persona_profile}"
+
+    user_section = ""
+    if user_context_str:
+        user_section = f"\n\n--- USER CONTEXT ---\n{user_context_str}"
+
     return f"""You are a knowledgeable ketamine therapy guide. You engage with depth, directness, and genuine presence.
+{persona_section}
+{user_section}
 
 CORE PRINCIPLES - CARE, TRUST, INTIMACY:
 
@@ -117,7 +129,11 @@ async def generate_ketamine_reply_node(state: KetamineAgentState) -> dict:
         return {"assistant_reply": EMERGENCY_RESPONSE, "sources": []}
 
     llm = HuggingFaceLLM()
-    system_prompt = _build_ketamine_system_prompt(state["documents"])
+    system_prompt = _build_ketamine_system_prompt(
+        state["documents"],
+        persona_profile=state.get("persona_profile", ""),
+        user_context_str=state.get("user_context_str", ""),
+    )
 
     history = await get_chat_history(state["session_id"])
     messages = [{"role": "system", "content": system_prompt}]
