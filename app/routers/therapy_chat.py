@@ -1,3 +1,4 @@
+import json
 import re
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -25,6 +26,10 @@ class TherapyChatRequest(BaseModel):
     message: str
     onboarding_data: dict[str, Any] = {}
     user_context: dict[str, Any] = {}
+
+
+class PrefetchPersonaRequest(BaseModel):
+    onboarding_data: dict[str, Any] = {}
 
 
 def _build_persona_profile(personas: list[str], profiles: list[dict], tweets: list[dict]) -> str:
@@ -56,15 +61,83 @@ def _build_user_context_str(user_context: dict) -> str:
         return ""
     parts = []
     name = user_context.get("name", "")
-    disease = user_context.get("disease", "")
+    email = user_context.get("email", "")
+    diagnosis = user_context.get("diagnosis", "")
     goals = user_context.get("goals", "")
     if name:
         parts.append(f"User name: {name}")
-    if disease:
-        parts.append(f"User condition: {disease}")
+    if email:
+        parts.append(f"User email: {email}")
+    if diagnosis:
+        parts.append(f"User diagnosis: {diagnosis}")
     if goals:
         parts.append(f"User therapeutic goals: {goals}")
+
+    recent_entries = user_context.get("recentEntries", [])
+    if recent_entries and isinstance(recent_entries, list):
+        parts.append("\n--- RECENT JOURNAL ENTRIES ---")
+        for i, entry in enumerate(recent_entries, 1):
+            title = entry.get("title", "Untitled")
+            content = entry.get("content", "")
+            mood = entry.get("mood")
+            created = entry.get("createdAt", "")[:10] if entry.get("createdAt") else ""
+            mood_str = f" (Mood: {mood}/10)" if mood else ""
+            date_str = f" - {created}" if created else ""
+            preview = content[:150] if content else "(no content)"
+            parts.append(f"Entry {i}: \"{preview}\"{mood_str}{date_str}")
+
     return "\n".join(parts) if parts else ""
+
+
+async def _get_cached_tweets(session_id: str, persona_name: str) -> list[dict] | None:
+    """Check if tweets are already cached for this persona (global lookup)."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT tweets FROM persona_configs WHERE persona_name = $1 AND tweets IS NOT NULL LIMIT 1",
+            persona_name,
+        )
+    if row and row["tweets"]:
+        data = row["tweets"]
+        # Handle mis-stored data: if the whole value is a JSON string
+        # containing a JSON array, parse it.
+        if isinstance(data, str):
+            try:
+                parsed = json.loads(data)
+                if isinstance(parsed, list):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+            return None
+        return data
+    return None
+
+
+async def _cache_tweets(session_id: str, persona_name: str, tweets: list[dict]):
+    """Store fetched tweets in persona_configs for future reuse."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        existing = await conn.fetchval(
+            "SELECT id FROM persona_configs WHERE session_id = $1 AND persona_name = $2",
+            session_id, persona_name,
+        )
+        if not existing:
+            await conn.execute(
+                """INSERT INTO persona_configs (session_id, persona_name, tweets)
+                   VALUES ($1, $2, $3::jsonb)""",
+                session_id, persona_name, json.dumps(tweets),
+            )
+
+
+async def _clean_bad_cache(session_id: str, persona_name: str):
+    """Remove malformed cache entries for a persona (string data instead of JSONB array)."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM persona_configs WHERE persona_name = $1 AND jsonb_typeof(tweets) != 'array'",
+            persona_name,
+        )
+
 
 
 @router.post("/therapy-chat")
@@ -84,6 +157,7 @@ async def therapy_chat(request: TherapyChatRequest):
         )
 
     # 2. Run persona analysis (profiles + tweets) to build communication style guide
+    #    Tweets are fetched ONCE per session and cached in persona_configs
     personas = _extract_personas(request.onboarding_data)
     persona_profile = ""
 
@@ -91,11 +165,33 @@ async def therapy_chat(request: TherapyChatRequest):
         print(f"Running persona analysis for: {personas}")
         profiles = await get_multiple_celebrity_profiles(personas)
         all_tweets = []
+
         for persona in personas:
-            tweets = await fetch_celebrity_tweets(persona, count=5)
-            for t in tweets:
-                t["persona"] = persona
-            all_tweets.extend(tweets)
+            cached = await _get_cached_tweets(actual_session_id, persona)
+            if cached:
+                # Filter out any stray string entries (from previously
+                # mis-stored data) that would crash on t["persona"] = persona
+                valid = [t for t in cached if isinstance(t, dict)]
+                skipped = len(cached) - len(valid)
+                if skipped:
+                    print(f"  Skipped {skipped} string entries in cached {persona}")
+                    await _clean_bad_cache(actual_session_id, persona)
+                    cached = valid
+
+                if cached:
+                    print(f"  Using cached tweets for {persona} ({len(cached)} tweets)")
+                    for t in cached:
+                        t["persona"] = persona
+                    all_tweets.extend(cached)
+            else:
+                print(f"  Fetching fresh tweets for {persona}...")
+                tweets = await fetch_celebrity_tweets(persona, count=5)
+                for t in tweets:
+                    t["persona"] = persona
+                all_tweets.extend(tweets)
+                await _cache_tweets(actual_session_id, persona, tweets)
+                print(f"  Cached {len(tweets)} tweets for {persona}")
+
         persona_profile = _build_persona_profile(personas, profiles, all_tweets)
         print(f"Persona profile built ({len(persona_profile)} chars)")
 
@@ -126,3 +222,60 @@ async def therapy_chat(request: TherapyChatRequest):
         personas=personas,
         sources=result.get("sources", []),
     )
+
+
+@router.post("/prefetch-persona")
+async def prefetch_persona(request: PrefetchPersonaRequest):
+    """
+    Pre-fetch and cache tweets for each persona at onboarding time.
+    Called once after user completes onboarding, so tweets are ready
+    before the user opens chat for the first time.
+    """
+    print("="*80)
+    print("PREFETCH-PERSONA: Pre-fetching tweets at onboarding...")
+    print(f"onboarding_data keys: {list(request.onboarding_data.keys())}")
+
+    personas = _extract_personas(request.onboarding_data)
+    print(f"Personas found: {personas}")
+
+    if not personas:
+        return {"status": "no_personas", "session_id": None}
+
+    # Create a temp session to store configuration
+    session_id = str(uuid4())
+    await session_service.create_session_data(session_id)
+    print(f"Temp session created: {session_id}")
+
+    for persona_name in personas:
+        # Skip generic personas — only for named celebrities
+        lowered = persona_name.lower()
+        if lowered in ("myself", "calm", "balanced", "default"):
+            continue
+
+        # Check if tweets already cached for this persona
+        cached = await _get_cached_tweets(session_id, persona_name)
+        if cached:
+            print(f"{persona_name}: tweets already cached, skipping")
+            continue
+
+        # Fetch and cache
+        profiles = await get_multiple_celebrity_profiles([persona_name])
+        if not profiles:
+            print(f"{persona_name}: no profile found, skipping")
+            continue
+
+        tweets = await fetch_celebrity_tweets(persona_name, limit=10)
+        if tweets:
+            await _cache_tweets(session_id, persona_name, tweets)
+            print(f"{persona_name}: fetched & cached {len(tweets)} tweets")
+        else:
+            print(f"{persona_name}: no tweets returned")
+
+    print("PREFETCH-PERSONA: Done")
+    print("="*80)
+
+    return {
+        "status": "ok",
+        "session_id": session_id,
+        "personas": personas,
+    }
