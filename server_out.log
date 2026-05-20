@@ -1,4 +1,0 @@
-Database check complete. Only created tables that didn't exist.
-Seeded 7 celebrity profiles into DB
-Database initialized successfully!
-INFO:     127.0.0.1:58402 - "GET /health HTTP/1.1" 200 OK
