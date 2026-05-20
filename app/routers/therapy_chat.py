@@ -79,12 +79,16 @@ def _build_user_context_str(user_context: dict) -> str:
         for i, entry in enumerate(recent_entries, 1):
             title = entry.get("title", "Untitled")
             content = entry.get("content", "")
+            transcribed = entry.get("transcribedText") or entry.get("transcribed_text") or ""
             mood = entry.get("mood")
             created = entry.get("createdAt", "")[:10] if entry.get("createdAt") else ""
             mood_str = f" (Mood: {mood}/10)" if mood else ""
             date_str = f" - {created}" if created else ""
             preview = content[:150] if content else "(no content)"
-            parts.append(f"Entry {i}: \"{preview}\"{mood_str}{date_str}")
+            text = f"Entry {i}: \"{preview}\"{mood_str}{date_str}"
+            if transcribed:
+                text += f"\n   Voice transcription: \"{transcribed[:200]}\""
+            parts.append(text)
 
     return "\n".join(parts) if parts else ""
 
