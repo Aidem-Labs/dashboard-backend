@@ -11,6 +11,7 @@ USE_TWIKIT = os.getenv("USE_TWIKIT", "false").lower() == "true"
 APIFY_API_KEY = os.getenv("APIFY_API_KEY")
 TWITTER_SCRAPER_ACTOR_ID = os.getenv("TWITTER_SCRAPER_ACTOR_ID", "apify/twitter-scraper")
 APP_ENV = os.getenv("APP_ENV", "development")
+DASHBOARD_URL = os.getenv("DASHBOARD_URL", "https://lumen8health.com")
 
 
 class Settings:

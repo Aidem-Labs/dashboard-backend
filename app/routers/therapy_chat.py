@@ -206,15 +206,20 @@ async def therapy_chat(request: TherapyChatRequest):
 
     # 4. Run ketamine agent with persona profile + user context
     print("Running ketamine agent...")
+    user_email = request.user_context.get("email", "")
+    user_name = request.user_context.get("name", "")
     result = await ketamine_graph.ainvoke({
         "session_id": actual_session_id,
         "documents": [],
         "user_message": request.message,
         "assistant_reply": "",
         "safety_triggered": False,
+        "out_of_scope": False,
         "sources": [],
         "persona_profile": persona_profile,
         "user_context_str": user_context_str,
+        "user_email": user_email,
+        "user_name": user_name,
     })
 
     print(f"Response: {result['assistant_reply'][:80]}...")

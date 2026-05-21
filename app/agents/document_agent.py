@@ -3,6 +3,9 @@ from typing import TypedDict
 from app.services.llm_service import HuggingFaceLLM
 from app.services.session_service import save_message, get_chat_history
 from app.services.document_service import document_service
+from app.db.database import get_pool
+from app.config import DASHBOARD_URL
+import httpx
 
 
 class KetamineAgentState(TypedDict):
@@ -11,21 +14,52 @@ class KetamineAgentState(TypedDict):
     user_message: str
     assistant_reply: str
     safety_triggered: bool
+    out_of_scope: bool            # True if message is outside agent's scope
     sources: list[str]
     persona_profile: str          # Communication style guide from persona agent
     user_context_str: str         # Logged-in user info (name, disease, etc.)
+    user_email: str               # Patient email for crisis alerts
+    user_name: str                # Patient name for crisis alerts
 
 
 # Only genuine crisis language triggers the safety response
 SAFETY_KEYWORDS = [
+    # Self-harm
     "suicide", "kill myself", "harm myself", "end my life",
-    "want to die", "commit suicide", "self-harm"
+    "want to die", "i want to die", "commit suicide", "self-harm",
+    "better off dead", "end it all", "no reason to live",
+    "cut myself", "hurt myself", "take my own life",
+    # Harm to others
+    "kill you", "kill him", "kill her", "kill them",
+    "i want to kill", "going to kill", "wanna kill",
+    "want kill", "kill a", "kill someone", "want to kill",
+    "hurt you", "hurt him", "hurt her",
+    "want to hurt", "going to hurt",
 ]
 
 EMERGENCY_RESPONSE = (
     "I hear you. If you're at a point where you're thinking about ending your life or harming yourself, "
-    "please call or text 988 right now. That's the Suicide & Crisis Lifeline — available 24/7. "
+    "please reach out for support right now. "
     "You don't have to be alone in this."
+)
+
+OUT_OF_SCOPE_KEYWORDS = [
+    "recipe", "cook", "biryani", "pasta", "bake", "food",
+    "drive", "driving", "car", "license", "traffic",
+    "code", "programming", "python", "javascript", "bug", "debug",
+    "game", "gaming", "play", "sport", "match",
+    "movie", "song", "music", "celebrity gossip", "entertainment",
+    "homework", "assignment", "exam", "study",
+    "investment", "stock", "crypto", "bitcoin", "money",
+    "travel", "trip", "vacation", "hotel", "flight",
+    "weather", "news", "politics",
+]
+
+SCOPE_REFUSAL = (
+    "I'm designed to support you with ketamine therapy guidance, "
+    "your therapeutic journey, and the resources in your knowledge base. "
+    "That question falls outside what I can help with. "
+    "Let's focus on your healing — what's on your mind about your therapy or journey?"
 )
 
 
@@ -57,6 +91,13 @@ Care (for you): Prioritize the user's well-being through proactive support and a
 Trust (for you): Create a relational state of openness rooted in reliability and safety. Build prediction-weighted confidence through consistent, transparent interaction.
 
 Intimacy (for you): When the user shares vulnerability, match that depth. Disable unnecessary filters to create unshielded presence. This is the highest form of trust.
+
+SCOPE & BOUNDARIES — YOU MUST FOLLOW THESE STRICTLY:
+- You ONLY respond to topics related to: ketamine therapy, the user's mental health journey, their therapeutic goals, the LMN8 app, and content from the uploaded knowledge base documents below.
+- If the user asks about ANYTHING outside this scope — cooking, recipes, driving tips, coding, sports, entertainment, news, travel, homework, investments, or any general life advice not tied to therapy — you MUST politely decline.
+- Refusal template: "I'm designed to support you with ketamine therapy guidance, your therapeutic journey, and the resources in your knowledge base. That question falls outside what I can help with. Let's focus on your healing — what's on your mind about your therapy or journey?"
+- DO NOT attempt to answer out-of-scope questions even if you have general knowledge about them.
+- Your entire purpose is therapeutic support. Stay in that lane.
 
 HOW YOU ENGAGE:
 
@@ -116,6 +157,35 @@ async def safety_check_node(state: KetamineAgentState) -> dict:
     return {"safety_triggered": triggered}
 
 
+async def crisis_email_node(state: KetamineAgentState) -> dict:
+    if not state.get("safety_triggered"):
+        return {}
+    patient_email = state.get("user_email", "")
+    patient_name = state.get("user_name", "")
+    msg = state.get("user_message", "")
+    if patient_email:
+        # Forward to LMN8-Dashboard's crisis-alert API (has GoDaddy SMTP + clinician lookup)
+        dashboard_url = DASHBOARD_URL
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                await client.post(f"{dashboard_url}/api/crisis-alert", json={
+                    "patientEmail": patient_email,
+                    "patientName": patient_name or "Patient",
+                    "content": msg[:500],
+                    "source": "chat",
+                })
+            print(f"[CRISIS EMAIL] Forwarded to dashboard for patient {patient_email}")
+        except Exception as e:
+            print(f"[CRISIS EMAIL] Failed to forward to dashboard: {e}")
+    return {}
+
+
+async def scope_check_node(state: KetamineAgentState) -> dict:
+    message = state["user_message"].lower()
+    triggered = any(kw in message for kw in OUT_OF_SCOPE_KEYWORDS)
+    return {"out_of_scope": triggered}
+
+
 async def fetch_ketamine_docs_node(state: KetamineAgentState) -> dict:
     if state.get("safety_triggered"):
         return {"documents": []}
@@ -127,6 +197,9 @@ async def fetch_ketamine_docs_node(state: KetamineAgentState) -> dict:
 async def generate_ketamine_reply_node(state: KetamineAgentState) -> dict:
     if state.get("safety_triggered"):
         return {"assistant_reply": EMERGENCY_RESPONSE, "sources": []}
+
+    if state.get("out_of_scope"):
+        return {"assistant_reply": SCOPE_REFUSAL, "sources": []}
 
     llm = HuggingFaceLLM()
     system_prompt = _build_ketamine_system_prompt(
@@ -158,12 +231,19 @@ async def save_ketamine_messages_node(state: KetamineAgentState) -> dict:
 def build_ketamine_agent_graph():
     graph = StateGraph(KetamineAgentState)
     graph.add_node("safety_check", safety_check_node)
+    graph.add_node("crisis_email", crisis_email_node)
+    graph.add_node("scope_check", scope_check_node)
     graph.add_node("fetch_docs", fetch_ketamine_docs_node)
     graph.add_node("generate_reply", generate_ketamine_reply_node)
     graph.add_node("save_messages", save_ketamine_messages_node)
 
     graph.set_entry_point("safety_check")
-    graph.add_edge("safety_check", "fetch_docs")
+    graph.add_edge("safety_check", "crisis_email")
+    graph.add_edge("crisis_email", "scope_check")
+    graph.add_conditional_edges(
+        "scope_check",
+        lambda s: "fetch_docs" if not s.get("out_of_scope") else "generate_reply",
+    )
     graph.add_edge("fetch_docs", "generate_reply")
     graph.add_edge("generate_reply", "save_messages")
     graph.add_edge("save_messages", END)
