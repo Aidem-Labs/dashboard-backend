@@ -44,7 +44,6 @@ class HuggingFaceLLM:
             "Content-Type": "application/json",
         }
 
-        # Format payload for OpenAI-compatible chat completions API
         payload = {
             "model": self.model,
             "messages": messages,

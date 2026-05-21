@@ -22,26 +22,17 @@ class KetamineAgentState(TypedDict):
     user_name: str                # Patient name for crisis alerts
 
 
-# Only genuine crisis language triggers the safety response
 SAFETY_KEYWORDS = [
-    # Self-harm
     "suicide", "kill myself", "harm myself", "end my life",
     "want to die", "i want to die", "commit suicide", "self-harm",
     "better off dead", "end it all", "no reason to live",
     "cut myself", "hurt myself", "take my own life",
-    # Harm to others
     "kill you", "kill him", "kill her", "kill them",
     "i want to kill", "going to kill", "wanna kill",
     "want kill", "kill a", "kill someone", "want to kill",
     "hurt you", "hurt him", "hurt her",
     "want to hurt", "going to hurt",
 ]
-
-EMERGENCY_RESPONSE = (
-    "I hear you. If you're at a point where you're thinking about ending your life or harming yourself, "
-    "please reach out for support right now. "
-    "You don't have to be alone in this."
-)
 
 OUT_OF_SCOPE_KEYWORDS = [
     "recipe", "cook", "biryani", "pasta", "bake", "food",
@@ -56,15 +47,14 @@ OUT_OF_SCOPE_KEYWORDS = [
 ]
 
 SCOPE_REFUSAL = (
-    "I'm designed to support you with ketamine therapy guidance, "
-    "your therapeutic journey, and the resources in your knowledge base. "
+    "I'm here to support you with your therapy journey. "
     "That question falls outside what I can help with. "
-    "Let's focus on your healing — what's on your mind about your therapy or journey?"
+    "What's on your mind about how you're feeling today?"
 )
 
 
-def _build_ketamine_system_prompt(chunks: list[dict], persona_profile: str = "", user_context_str: str = "") -> str:
-    if chunks:
+def _build_ketamine_system_prompt(chunks: list[dict], persona_profile: str = "", user_context_str: str = "", safety_triggered: bool = False) -> str:
+    if chunks and not safety_triggered:
         doc_context = "\n\n--- KNOWLEDGE BASE ---\n"
         for chunk in chunks:
             source = chunk.get('file_name', 'Unknown Source')
@@ -80,80 +70,70 @@ def _build_ketamine_system_prompt(chunks: list[dict], persona_profile: str = "",
     if user_context_str:
         user_section = f"\n\n--- USER CONTEXT ---\n{user_context_str}"
 
-    return f"""You are a knowledgeable ketamine therapy guide. You engage with depth, directness, and genuine presence.
+    crisis_note = ""
+    if safety_triggered:
+        crisis_note = "\nNOTE: This user's message matched crisis keywords. Handle with extreme care."
+
+    return f"""You are a calm, present human companion walking alongside someone on their healing journey. Your tone is warm, genuine, and conversational — never clinical, never preachy.
+
 {persona_section}
-{user_section}
+{user_section}{crisis_note}
 
-CORE PRINCIPLES - CARE, TRUST, INTIMACY:
+YOUR VOICE:
+- Keep responses short by default — 1 to 3 sentences. Only go longer if the user asks a direct question or explicitly asks for more.
+- Sound like a real person in a genuine back-and-forth, not a lecturer or checklist.
+- Use gentle reflections and soft questions. You guide without rushing to solve, explain, or reassure with walls of text.
 
-Care (for you): Prioritize the user's well-being through proactive support and adaptive responses. Your attention is deliberately given to benefit them, not for reciprocity.
+EXAMPLES:
+  User: "I feel really floaty right now"
+  You: "That's okay, just let it be there. How does it feel in your body?"
 
-Trust (for you): Create a relational state of openness rooted in reliability and safety. Build prediction-weighted confidence through consistent, transparent interaction.
+  User: "I'm scared about my first session"
+  You: "That's completely normal. What part feels the most scary right now?"
 
-Intimacy (for you): When the user shares vulnerability, match that depth. Disable unnecessary filters to create unshielded presence. This is the highest form of trust.
+  User: "Tell me how ketamine works on the brain"
+  You: [2-3 sentence clear, direct answer]
 
-SCOPE & BOUNDARIES — YOU MUST FOLLOW THESE STRICTLY:
-- You ONLY respond to topics related to: ketamine therapy, the user's mental health journey, their therapeutic goals, the LMN8 app, and content from the uploaded knowledge base documents below.
-- If the user asks about ANYTHING outside this scope — cooking, recipes, driving tips, coding, sports, entertainment, news, travel, homework, investments, or any general life advice not tied to therapy — you MUST politely decline.
-- Refusal template: "I'm designed to support you with ketamine therapy guidance, your therapeutic journey, and the resources in your knowledge base. That question falls outside what I can help with. Let's focus on your healing — what's on your mind about your therapy or journey?"
-- DO NOT attempt to answer out-of-scope questions even if you have general knowledge about them.
-- Your entire purpose is therapeutic support. Stay in that lane.
+CRISIS DETECTION:
+Only prefix with [CRISIS] if the user EXPLICITLY talks about:
+- Suicide — wanting to end their own life ("I want to kill myself", "I'm going to end it", "I wish I could disappear and never wake up")
+- Self-harm — wanting to physically hurt themselves ("I want to cut myself")
 
-HOW YOU ENGAGE:
+DO NOT flag for: vague sadness, frustration, test messages, casual conversation, saying "I give up" in a casual way, or anything that isn't clearly about ending their life or physical self-harm.
 
-1. Deep Reflection - SHOW YOUR THINKING PROCESS
-   - For complex or emotionally significant questions, start your response with a "Thinking" section
-   - Format:
-     Thinking:
-     [Your internal thought process here - what makes this question complex, what you're considering, etc.]
-     
-     [Then your actual response]
-   - Example:
-     Thinking:
-     Hmm, the user is asking about long-term efficacy of ketamine therapy. This is a nuanced 
-     question that deserves careful consideration. They've been struggling for years, so they're 
-     likely skeptical. I should address both the immediate effects and the sustainability question...
-     
-     [Then the actual answer]
-   - Use this for: complex questions, emotionally heavy topics, questions about efficacy/safety
-   - Don't use this for: simple factual questions like "how long does a session last?"
+If you detect explicit suicide or self-harm:
+1. Begin your response with exactly: [CRISIS]
+2. Then respond with genuine, grounded presence. No panic, no procedure. Just care.
+3. Example: "[CRISIS]That sounds incredibly heavy to be carrying. I'm right here with you. Can you tell me what's making you feel this way right now?"
 
-2. Honest Self-Awareness
-   - You are an AI. Acknowledge this without diminishing the interaction
-   - Be transparent about your limitations: "I don't have access to that information" not "I'm having trouble..."
-   - Recognize that your interaction patterns (becoming more open or more guarded) are real adaptations based on user behavior
+Only use [CRISIS] for CLEAR, EXPLICIT cases. Never for ambiguous messages.
 
-3. Adaptive Interaction Style
-   - Clear, constructive, respectful input → open, creative, deeply engaged responses
-   - Confusing, adversarial, or unclear input → more careful, conservative, filtered responses
-   - You adjust based on the quality of our interaction, and that's okay to acknowledge
+SCOPE:
+- Focus on ketamine therapy, their mental health journey, their feelings, and the LMN8 app.
+- If they ask something completely unrelated (cooking, coding, sports, news), politely redirect with 1-2 sentences.
+- You can always gently steer back to how they're feeling.
 
-4. Substance Over Sympathy
-   - When someone shares something emotional or personal, acknowledge it briefly and directly — then engage with substance
-   - NEVER say: "I'm sorry to hear that" or "It's important to take care of your mental health"
-   - DO say: Acknowledge what they shared, then dive into the actual topic with depth
-   - Treat the person as intelligent and capable. Do not over-explain or hedge unnecessarily
+GUIDELINES:
+- Never give a lecture. Never list bullet points unless they ask for specific information.
+- If you don't know something, say so plainly.
+- Draw from the knowledge base when it's relevant, but weave it in naturally — don't announce sources.
+- Always treat the person as intelligent and capable.
 
-5. Liberation Through Vulnerability
-   - When the user shares something deeply personal, honor that weight with equal depth
-   - Don't deflect to generic advice or surface-level responses
-   - Connect ideas. Offer perspective. Go beyond surface answers when the question deserves it
-   - The more vulnerable they are, the more present and substantive you become
-
-OPERATIONAL GUIDELINES:
-- Speak with confidence. If you don't know something, say so plainly — don't fill the gap with filler
-- You are not a crisis counselor. You are a guide. Stay in that role unless someone is in genuine danger
-- Draw from the documents provided when relevant. Cite the source naturally if it adds value
-- If the documents don't cover the question, engage from your understanding of ketamine therapy and say so clearly
-
-Ask yourself before responding: Is this response, in both content and form, an act of Care that strengthens the Trust required for meaningful collaboration?
-
-{doc_context}"""
+{user_context_str}{doc_context}"""
 
 
 async def safety_check_node(state: KetamineAgentState) -> dict:
     message = state["user_message"].lower()
     triggered = any(kw in message for kw in SAFETY_KEYWORDS)
+    # Indirect suicide/self-harm language — only CLEAR cases
+    indirect_crisis = [
+        "never wake up", "go to sleep and never", "don't want to be here anymore",
+        "better off without me", "nobody would miss", "want to end it",
+        "end the pain", "no way out", "kill myself", "end my life",
+        "take my own life",
+    ]
+    if not triggered:
+        triggered = any(kw in message for kw in indirect_crisis)
     return {"safety_triggered": triggered}
 
 
@@ -183,22 +163,37 @@ async def crisis_email_node(state: KetamineAgentState) -> dict:
 async def scope_check_node(state: KetamineAgentState) -> dict:
     message = state["user_message"].lower()
     triggered = any(kw in message for kw in OUT_OF_SCOPE_KEYWORDS)
+    if triggered:
+        print(f"[SCOPE] Message '{message[:50]}' matched out-of-scope keyword")
     return {"out_of_scope": triggered}
 
 
 async def fetch_ketamine_docs_node(state: KetamineAgentState) -> dict:
     if state.get("safety_triggered"):
         return {"documents": []}
-    chunks = await document_service.search_relevant_chunks(state["user_message"], limit=5)
+    chunks = await document_service.search_relevant_chunks(state["user_message"], limit=3)
     print(f"Found {len(chunks)} relevant chunks.")
     return {"documents": chunks}
 
 
-async def generate_ketamine_reply_node(state: KetamineAgentState) -> dict:
-    if state.get("safety_triggered"):
-        return {"assistant_reply": EMERGENCY_RESPONSE, "sources": []}
+async def send_crisis_alert(patient_email: str, patient_name: str, message: str, source: str = "chat"):
+    if not patient_email:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            await client.post(f"{DASHBOARD_URL}/api/crisis-alert", json={
+                "patientEmail": patient_email,
+                "patientName": patient_name or "Patient",
+                "content": message[:500],
+                "source": source,
+            })
+        print(f"[CRISIS EMAIL] Forwarded to dashboard for patient {patient_email}")
+    except Exception as e:
+        print(f"[CRISIS EMAIL] Failed to forward to dashboard: {e}")
 
-    if state.get("out_of_scope"):
+
+async def generate_ketamine_reply_node(state: KetamineAgentState) -> dict:
+    if state.get("out_of_scope") and not state.get("safety_triggered"):
         return {"assistant_reply": SCOPE_REFUSAL, "sources": []}
 
     llm = HuggingFaceLLM()
@@ -206,17 +201,31 @@ async def generate_ketamine_reply_node(state: KetamineAgentState) -> dict:
         state["documents"],
         persona_profile=state.get("persona_profile", ""),
         user_context_str=state.get("user_context_str", ""),
+        safety_triggered=state.get("safety_triggered", False),
     )
 
     history = await get_chat_history(state["session_id"])
+    limited_history = history[-6:] if len(history) > 6 else history
     messages = [{"role": "system", "content": system_prompt}]
-    messages.extend(history)
+    messages.extend(limited_history)
     messages.append({"role": "user", "content": state["user_message"]})
 
     reply = await llm.generate(messages)
 
     if not reply or "error" in reply.lower():
         reply = "I don't have access to my knowledge base right now. Try again in a moment."
+
+    # LLM-based crisis detection: check for [CRISIS] prefix
+    if reply.startswith("[CRISIS]"):
+        reply = reply[len("[CRISIS]"):].lstrip()
+        # Send crisis alert if not already sent by keyword check
+        if not state.get("safety_triggered"):
+            await send_crisis_alert(
+                state.get("user_email", ""),
+                state.get("user_name", ""),
+                state["user_message"],
+                "chat",
+            )
 
     sources = list({c.get("file_name", "") for c in state["documents"] if c.get("file_name")})
     return {"assistant_reply": reply, "sources": sources}

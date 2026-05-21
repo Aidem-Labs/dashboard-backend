@@ -1,7 +1,9 @@
 from datetime import datetime
 from typing import Optional
 import json
-from app.db.database import get_pool
+import asyncio
+from asyncpg.exceptions import ConnectionDoesNotExistError
+from app.db.database import get_pool, get_connection
 
 
 async def create_session(
@@ -59,11 +61,26 @@ async def get_chat_history(session_id: str) -> list[dict]:
 
 
 async def save_message(session_id: str, role: str, content: str):
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        await conn.execute(
-            "INSERT INTO messages (session_id, role, content) VALUES ($1, $2, $3)",
-            session_id,
-            role,
-            content,
-        )
+    last_error = None
+    for attempt in range(3):
+        try:
+            conn = await get_connection()
+            try:
+                await conn.execute(
+                    "INSERT INTO messages (session_id, role, content) VALUES ($1, $2, $3)",
+                    session_id,
+                    role,
+                    content,
+                )
+            finally:
+                await conn.close()
+            return
+        except ConnectionDoesNotExistError as e:
+            last_error = e
+            print(f"[DB] Connection stale on attempt {attempt+1}, retrying...")
+            await asyncio.sleep(1)
+        except Exception as e:
+            last_error = e
+            print(f"[DB] Error on attempt {attempt+1}: {e}")
+            await asyncio.sleep(1)
+    print(f"[DB] Failed to save message after 3 attempts: {last_error}")

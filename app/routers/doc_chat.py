@@ -40,7 +40,7 @@ async def doc_chat(request: PublicDocChatRequest):
     })
 
     return ChatResponse(
-        session_id=session_id,
+        session_id=str(session_id),
         response=result["assistant_reply"],
         personas=["Ketamine Therapy Assistant"],
         sources=result.get("sources", []),

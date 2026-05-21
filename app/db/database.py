@@ -3,13 +3,29 @@ from app.config import DATABASE_URL
 from app.utils.celebrity_profiles import seed_celebrity_profiles
 
 _pool = None
+import asyncio
 
 
 async def get_pool() -> asyncpg.Pool:
     global _pool
     if _pool is None:
-        _pool = await asyncpg.create_pool(DATABASE_URL)
+        _pool = await asyncpg.create_pool(
+            DATABASE_URL,
+            min_size=2,
+            max_size=10,
+            max_inactive_connection_lifetime=30.0,
+            command_timeout=30,
+            timeout=30,
+        )
     return _pool
+
+
+async def get_connection():
+    """Acquire a direct connection (not from pool) for long-running operations."""
+    return await asyncpg.connect(
+        DATABASE_URL,
+        timeout=30,
+    )
 
 
 async def close_pool():
