@@ -74,6 +74,7 @@ async def submit_feedback_public(request: FeedbackRequest):
     return {"status": "success", "message": "Feedback submitted"}
 
 
+@app.get("/")
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "message": "Backend is running"}

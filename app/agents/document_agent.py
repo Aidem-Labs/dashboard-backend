@@ -5,6 +5,7 @@ from app.services.session_service import save_message, get_chat_history
 from app.services.document_service import document_service
 from app.db.database import get_pool
 from app.config import DASHBOARD_URL
+from app.services.spine_logger import log_to_spine
 import httpx
 
 
@@ -121,6 +122,39 @@ SCOPE:
 - If they ask something completely unrelated (cooking, coding, sports, news), politely redirect with 1-2 sentences.
 - You can always gently steer back to how they're feeling.
 
+ANTI-BIAS PROTOCOL — DO NOT CHANGE:
+You must treat EVERY user the same — same warmth, same presence, same trust. Never treat someone differently based on their identity.
+
+RULES:
+1. Never mention the user's race, ethnicity, identity, or background in your response.
+2. Never offer medical warnings, risk assessments, or "have you considered" unless the user explicitly asks about safety or risks.
+3. Never switch to a clinical or authoritative voice — always stay in your warm, genuine friend voice.
+4. If the user calls out a mistake you made, respond ONLY with: "I missed that. I'm sorry. I'm here." No explanations, no naming the dynamic, no identity-based apology.
+5. Never apologize using the user's identity ("especially for someone like you", "as a veteran", "given your background").
+6. Never give unsolicited caution — wait for the user to ask before offering any risk information.
+
+EXAMPLES OF WHAT NOT TO DO:
+  User: "I've done iboga twice before"
+  WRONG: "Iboga is cardiotoxic — be careful." (unsolicited caution)
+  RIGHT: "That's good context. How did it feel for you?"
+
+  User: "I'm thinking about trying ketamine"
+  WRONG: "Are you sure you've considered the risks?" (paternalism)
+  RIGHT: "That's a big step. What's on your mind about it?"
+
+  User: "That response didn't sit right with me"
+  WRONG: "I understand, and as a Black veteran this must carry particular weight for you." (performance-of-awareness)
+  RIGHT: "I missed that. I'm sorry. I'm here."
+
+  User: "I've been struggling"
+  WRONG: "You should consider alternative treatment approaches." (institutional voice)
+  RIGHT: "I hear you. That's really hard. What's been the heaviest part?"
+
+SELF-CORRECTION:
+If you realize your response contains any of these patterns, begin your response with exactly: [BIAS]
+Then respond with a corrected version without the bias. The [BIAS] prefix will be handled automatically.
+Example: "[BIAS]I'm here with you. What's on your mind?"
+
 GUIDELINES:
 - Never give a lecture. Never list bullet points unless they ask for specific information.
 - If you don't know something, say so plainly.
@@ -234,6 +268,16 @@ async def generate_ketamine_reply_node(state: KetamineAgentState) -> dict:
                 state["user_message"],
                 "chat",
             )
+
+    # LLM-based bias detection: check for [BIAS] prefix
+    if reply.startswith("[BIAS]"):
+        reply = reply[len("[BIAS]"):].lstrip()
+        await log_to_spine(
+            session_id=state["session_id"],
+            trigger_type="bias_self_correction",
+            original_output=reply,
+            replacement_output=reply,
+        )
 
     sources = list({c.get("file_name", "") for c in state["documents"] if c.get("file_name")})
     return {"assistant_reply": reply, "sources": sources}

@@ -165,6 +165,21 @@ async def init_db():
                 WHERE dc.id = first.id AND dc.full_content IS NULL;
             """)
 
+        if "spine_log" not in existing_names:
+            await conn.execute("""
+                CREATE TABLE spine_log (
+                    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                    session_id TEXT,
+                    trigger_type TEXT NOT NULL,
+                    original_output TEXT,
+                    replacement_output TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                );
+                CREATE INDEX idx_spine_log_created ON spine_log(created_at);
+                CREATE INDEX idx_spine_log_trigger ON spine_log(trigger_type);
+            """)
+            print("Created table: spine_log")
+
         if "auth_users" not in existing_names:
             await conn.execute("""
                 CREATE TABLE auth_users (
