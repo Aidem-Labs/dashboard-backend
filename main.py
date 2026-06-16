@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from jose import jwt, JWTError
 from app.config import settings
 from app.db.database import init_db, close_pool
-from app.routers import sessions, chat, documents, doc_chat, auth, therapy_chat
+from app.routers import sessions, chat, documents, doc_chat, auth, therapy_chat, crisis
 from app.routers import learning as learning_router
 from app.models.schemas import FeedbackRequest
 from app.services.learning_service import learning_service
@@ -61,6 +61,7 @@ app.include_router(therapy_chat.router)
 # All other routes require auth
 app.include_router(sessions.router, dependencies=[Depends(require_auth)])
 app.include_router(documents.router, dependencies=[Depends(require_auth)])
+app.include_router(crisis.router, dependencies=[Depends(require_auth)])
 
 # Admin-only routes
 app.include_router(learning_router.router, dependencies=[Depends(require_admin)])

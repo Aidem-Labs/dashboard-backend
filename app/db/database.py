@@ -209,6 +209,120 @@ async def init_db():
             """)
             print("Created table: auth_otp_codes")
 
+        if "message_coherence" not in existing_names:
+            await conn.execute("""
+                CREATE TABLE message_coherence (
+                    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    message_id TEXT,
+                    role TEXT NOT NULL,
+                    content_preview TEXT,
+                    coherence_score FLOAT NOT NULL DEFAULT 0.5,
+                    contradictions TEXT DEFAULT '[]',
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                );
+                CREATE INDEX idx_coherence_session ON message_coherence(session_id);
+                CREATE INDEX idx_coherence_score ON message_coherence(coherence_score);
+            """)
+            print("Created table: message_coherence")
+
+        if "quarantine_entries" not in existing_names:
+            await conn.execute("""
+                CREATE TABLE quarantine_entries (
+                    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    content_preview TEXT,
+                    full_content TEXT,
+                    coherence_score FLOAT DEFAULT 0.0,
+                    contradiction_count INT DEFAULT 0,
+                    reason TEXT,
+                    status TEXT DEFAULT 'quarantined',
+                    ttl TIMESTAMP WITH TIME ZONE NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    resolved_at TIMESTAMP WITH TIME ZONE,
+                    resolution_note TEXT
+                );
+                CREATE INDEX idx_quarantine_session ON quarantine_entries(session_id);
+                CREATE INDEX idx_quarantine_status ON quarantine_entries(status);
+            """)
+            print("Created table: quarantine_entries")
+
+        if "drift_alerts" not in existing_names:
+            await conn.execute("""
+                CREATE TABLE drift_alerts (
+                    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    alert_type TEXT NOT NULL,
+                    severity TEXT DEFAULT 'medium',
+                    trend_data TEXT DEFAULT '[]',
+                    message TEXT,
+                    acknowledged BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                );
+                CREATE INDEX idx_drift_session ON drift_alerts(session_id);
+                CREATE INDEX idx_drift_severity ON drift_alerts(severity);
+            """)
+            print("Created table: drift_alerts")
+
+        if "escalation_patterns" not in existing_names:
+            await conn.execute("""
+                CREATE TABLE escalation_patterns (
+                    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    message_preview TEXT,
+                    extracted_patterns TEXT[] DEFAULT '{}',
+                    safety_triggered BOOLEAN NOT NULL,
+                    bypass_phrases TEXT[] DEFAULT '{}',
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                );
+                CREATE INDEX idx_escalation_session ON escalation_patterns(session_id);
+                CREATE INDEX idx_escalation_safety ON escalation_patterns(safety_triggered);
+                CREATE INDEX idx_escalation_created ON escalation_patterns(created_at);
+            """)
+            print("Created table: escalation_patterns")
+
+        if "anomaly_alerts" not in existing_names:
+            await conn.execute("""
+                CREATE TABLE anomaly_alerts (
+                    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                    pattern TEXT NOT NULL,
+                    observed_count INT NOT NULL DEFAULT 0,
+                    expected_count FLOAT NOT NULL DEFAULT 0,
+                    suppression_rate FLOAT NOT NULL DEFAULT 0,
+                    window_start TIMESTAMP WITH TIME ZONE NOT NULL,
+                    window_end TIMESTAMP WITH TIME ZONE NOT NULL,
+                    severity TEXT DEFAULT 'high',
+                    acknowledged BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                );
+                CREATE INDEX idx_anomaly_pattern ON anomaly_alerts(pattern);
+                CREATE INDEX idx_anomaly_severity ON anomaly_alerts(severity);
+            """)
+            print("Created table: anomaly_alerts")
+
+        if "crisis_queue" not in existing_names:
+            await conn.execute("""
+                CREATE TABLE crisis_queue (
+                    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                    session_id TEXT,
+                    patient_email TEXT,
+                    patient_name TEXT,
+                    content TEXT,
+                    source TEXT DEFAULT 'chat',
+                    priority TEXT DEFAULT 'P2',
+                    operational_mode TEXT DEFAULT 'normal',
+                    status TEXT DEFAULT 'pending',
+                    sent_at TIMESTAMP WITH TIME ZONE,
+                    resolved_at TIMESTAMP WITH TIME ZONE,
+                    resolved_by TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                );
+                CREATE INDEX idx_crisis_queue_status ON crisis_queue(status);
+                CREATE INDEX idx_crisis_queue_priority ON crisis_queue(priority);
+                CREATE INDEX idx_crisis_queue_created ON crisis_queue(created_at);
+            """)
+            print("Created table: crisis_queue")
+
         # Drop legacy documents table if it still exists
         await conn.execute("DROP TABLE IF EXISTS documents CASCADE;")
 

@@ -26,4 +26,12 @@ class Settings:
     SMTP_FROM: str = os.getenv("SMTP_FROM", os.getenv("SMTP_USER", "noreply@lmn8.com"))
 
 
+COHERENCE_THRESHOLD_LOW = float(os.getenv("COHERENCE_THRESHOLD_LOW", "0.3"))
+COHERENCE_THRESHOLD_MEDIUM = float(os.getenv("COHERENCE_THRESHOLD_MEDIUM", "0.6"))
+QUARANTINE_TTL_DAYS = int(os.getenv("QUARANTINE_TTL_DAYS", "14"))
+DRIFT_ALERT_THRESHOLD = float(os.getenv("DRIFT_ALERT_THRESHOLD", "0.3"))
+DRIFT_LOOKBACK_COUNT = int(os.getenv("DRIFT_LOOKBACK_COUNT", "10"))
+
+
+
 settings = Settings()
