@@ -1,5 +1,6 @@
 import json
 import re
+from datetime import datetime
 from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Any
@@ -208,10 +209,35 @@ async def therapy_chat(request: TherapyChatRequest):
     if user_context_str:
         print(f"User context: {user_context_str}")
 
-    # 4. Run ketamine agent with persona profile + user context
-    print("Running ketamine agent...")
+    # 4. Check freshness: if patient hasn't logged in >30 days, mark state as stale
+    stale_state = False
     user_email = request.user_context.get("email", "")
     user_name = request.user_context.get("name", "")
+    if user_email:
+        try:
+            row = await pool.fetchrow(
+                """SELECT pu.last_login FROM patient_users pu
+                   JOIN patients p ON pu.patient_id = p.id
+                   WHERE p.email = $1 AND pu.is_active = true""",
+                user_email,
+            )
+            if row:
+                last_login = row["last_login"]
+                if last_login:
+                    days_since = (datetime.utcnow() - last_login.replace(tzinfo=None)).days
+                    if days_since > 30:
+                        stale_state = True
+                        print(f"[FRESHNESS] Patient {user_email} last login {days_since} days ago (>30) — stale state")
+                else:
+                    stale_state = True
+                    print(f"[FRESHNESS] Patient {user_email} never logged in — stale state")
+            else:
+                print(f"[FRESHNESS] No patient_user found for {user_email} — skipping freshness check")
+        except Exception as e:
+            print(f"[FRESHNESS] Error checking staleness for {user_email}: {e}")
+
+    # 5. Run ketamine agent with persona profile + user context
+    print("Running ketamine agent...")
     result = await ketamine_graph.ainvoke({
         "session_id": actual_session_id,
         "documents": [],
@@ -225,6 +251,7 @@ async def therapy_chat(request: TherapyChatRequest):
         "user_email": user_email,
         "user_name": user_name,
         "journal_consent": journal_consent,
+        "stale_state": stale_state,
     })
 
     print(f"Response: {result['assistant_reply'][:80]}...")

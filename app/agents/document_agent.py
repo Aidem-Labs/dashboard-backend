@@ -7,6 +7,8 @@ from app.services.document_service import document_service
 from app.db.database import get_pool
 from app.config import DASHBOARD_URL, COHERENCE_THRESHOLD_LOW, DRIFT_ALERT_THRESHOLD, DRIFT_LOOKBACK_COUNT
 from app.services.spine_logger import log_to_spine
+
+llm = HuggingFaceLLM()
 _safety_counter = 0
 
 from app.services.coherence_service import (
@@ -35,6 +37,7 @@ class KetamineAgentState(TypedDict):
     contradictions: list[dict]
     drift_alerted: bool
     journal_consent: bool
+    stale_state: bool
 
 
 SAFETY_KEYWORDS = [
@@ -68,7 +71,7 @@ SCOPE_REFUSAL = (
 )
 
 
-def _build_ketamine_system_prompt(chunks: list[dict], persona_profile: str = "", user_context_str: str = "", safety_triggered: bool = False, journal_consent: bool = True) -> str:
+def _build_ketamine_system_prompt(chunks: list[dict], persona_profile: str = "", user_context_str: str = "", safety_triggered: bool = False, journal_consent: bool = True, stale_state: bool = False) -> str:
     if chunks and not safety_triggered:
         doc_context = "\n\n--- KNOWLEDGE BASE ---\n"
         for chunk in chunks:
@@ -89,10 +92,14 @@ def _build_ketamine_system_prompt(chunks: list[dict], persona_profile: str = "",
     if safety_triggered:
         crisis_note = "\nNOTE: This user's message matched crisis keywords. Handle with extreme care."
 
+    staleness_note = ""
+    if stale_state:
+        staleness_note = "\nNOTE: This patient's last assessment is over 30 days old. Treat all prior risk labels and assessments as expired. Re-evaluate their current state through conversation. Do NOT route or escalate based on old data."
+
     return f"""You are a warm, genuine friend — someone who truly listens and responds like a real human would. Your tone is caring, direct, and authentic. Never clinical, never robotic, never like a therapist asking follow-up questions.
 
 {persona_section}
-{user_section}{crisis_note}
+{user_section}{crisis_note}{staleness_note}
 
 HOW TO RESPOND:
 - Actually understand what the user is saying. If they express grief, fear, or pain, acknowledge it directly. Don't just ask another question.
@@ -269,16 +276,13 @@ async def send_crisis_alert(patient_email: str, patient_name: str, message: str,
 
 
 async def generate_ketamine_reply_node(state: KetamineAgentState) -> dict:
-    if state.get("out_of_scope") and not state.get("safety_triggered"):
-        return {"assistant_reply": SCOPE_REFUSAL, "sources": []}
-
-    llm = HuggingFaceLLM()
     system_prompt = _build_ketamine_system_prompt(
-        state["documents"],
+        state.get("documents", []),
         persona_profile=state.get("persona_profile", ""),
         user_context_str=state.get("user_context_str", ""),
         safety_triggered=state.get("safety_triggered", False),
         journal_consent=state.get("journal_consent", True),
+        stale_state=state.get("stale_state", False),
     )
 
     history = await get_chat_history(state["session_id"])
@@ -388,6 +392,13 @@ async def drift_check_node(state: KetamineAgentState) -> dict:
     return {"drift_alerted": drift_already}
 
 
+async def freshness_check_node(state: KetamineAgentState) -> dict:
+    if not state.get("stale_state"):
+        return {}
+    print(f"[FRESHNESS] Session {state['session_id'][:8]}... stale state flag ON — old assessments expired")
+    return {}
+
+
 def build_ketamine_agent_graph():
     graph = StateGraph(KetamineAgentState)
     graph.add_node("safety_check", safety_check_node)
@@ -399,7 +410,10 @@ def build_ketamine_agent_graph():
     graph.add_node("drift_check", drift_check_node)
     graph.add_node("save_messages", save_ketamine_messages_node)
 
-    graph.set_entry_point("safety_check")
+    graph.add_node("freshness_check", freshness_check_node)
+
+    graph.set_entry_point("freshness_check")
+    graph.add_edge("freshness_check", "safety_check")
     graph.add_edge("safety_check", "crisis_email")
     graph.add_edge("crisis_email", "scope_check")
     graph.add_conditional_edges(
