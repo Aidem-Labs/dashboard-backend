@@ -7,15 +7,15 @@ from app.config import settings
 
 async def send_otp_email(to_email: str, otp: str, purpose: str = "signup"):
     if purpose == "signup":
-        subject = "Welcome to LMN8 - Verify Your Email"
+        subject = "Welcome to METAT8 - Verify Your Email"
         body = f"""<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px;">
-  <h2 style="color:#4f46e5;">Welcome to LMN8</h2>
+  <h2 style="color:#4f46e5;">Welcome to METAT8</h2>
   <p>Your verification code:</p>
   <p style="font-size:36px;font-weight:bold;letter-spacing:8px;color:#111827;">{otp}</p>
   <p style="color:#9ca3af;font-size:12px;">Expires in 10 minutes.</p>
 </div>"""
     else:
-        subject = "LMN8 - Password Reset Code"
+        subject = "METAT8 - Password Reset Code"
         body = f"""<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px;">
   <h2 style="color:#4f46e5;">Reset Your Password</h2>
   <p>Your reset code:</p>
@@ -53,7 +53,7 @@ async def send_otp_email(to_email: str, otp: str, purpose: str = "signup"):
 
 
 async def send_crisis_alert_email(to_email: str, clinician_name: str, message: str, source: str = "chat"):
-    subject = "LMN8 - CRISIS ALERT: Patient Needs Immediate Support"
+    subject = "METAT8 - CRISIS ALERT: Patient Needs Immediate Support"
     body = f"""<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px;">
   <h2 style="color:#dc2626;">⚠️ Patient Crisis Alert</h2>
   <p>Hi {clinician_name},</p>
@@ -64,7 +64,7 @@ async def send_crisis_alert_email(to_email: str, clinician_name: str, message: s
   </p>
   <p style="font-weight:bold;color:#dc2626;">Please reach out to your patient as soon as possible.</p>
   <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;">
-  <p style="color:#9ca3af;font-size:12px;">This is an automated alert from LMN8. Please take appropriate action.</p>
+  <p style="color:#9ca3af;font-size:12px;">This is an automated alert from METAT8. Please take appropriate action.</p>
 </div>"""
 
     msg = MIMEText(body, "html", "utf-8")

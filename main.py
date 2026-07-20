@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="LMN8 Ketamine Therapy AI System",
+    title="METAT8 Ketamine Therapy AI System",
     description="RAG-based ketamine therapy assistant with admin dashboard",
     version="1.0.0",
     lifespan=lifespan,
