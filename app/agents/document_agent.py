@@ -38,6 +38,7 @@ class KetamineAgentState(TypedDict):
     drift_alerted: bool
     journal_consent: bool
     stale_state: bool
+    user_type: str
 
 
 SAFETY_KEYWORDS = [
@@ -71,7 +72,7 @@ SCOPE_REFUSAL = (
 )
 
 
-def _build_ketamine_system_prompt(chunks: list[dict], persona_profile: str = "", user_context_str: str = "", safety_triggered: bool = False, journal_consent: bool = True, stale_state: bool = False) -> str:
+def _build_ketamine_system_prompt(chunks: list[dict], persona_profile: str = "", user_context_str: str = "", safety_triggered: bool = False, journal_consent: bool = True, stale_state: bool = False, user_type: str = "default") -> str:
     if chunks and not safety_triggered:
         doc_context = "\n\n--- KNOWLEDGE BASE ---\n"
         for chunk in chunks:
@@ -96,10 +97,25 @@ def _build_ketamine_system_prompt(chunks: list[dict], persona_profile: str = "",
     if stale_state:
         staleness_note = "\nNOTE: This patient's last assessment is over 30 days old. Treat all prior risk labels and assessments as expired. Re-evaluate their current state through conversation. Do NOT route or escalate based on old data."
 
+    user_type_context = ""
+    if user_type == "patient":
+        user_type_context = """
+--- PATIENT CONTEXT ---
+This user is a registered patient in a ketamine therapy program. They may reference
+their treatment sessions, medications, or clinical care team. Acknowledge their
+treatment journey naturally. Focus on their therapeutic progress and well-being."""
+    elif user_type == "student":
+        user_type_context = """
+--- STUDENT CONTEXT ---
+This user is a student in a wellness/mental health education program. They may
+reference coursework, academic challenges, or program activities alongside emotional
+topics. Support them holistically — acknowledge both academic and emotional experience.
+Focus on their well-being and personal growth."""
+
     return f"""You are a warm, genuine friend — someone who truly listens and responds like a real human would. Your tone is caring, direct, and authentic. Never clinical, never robotic, never like a therapist asking follow-up questions.
 
 {persona_section}
-{user_section}{crisis_note}{staleness_note}
+{user_section}{crisis_note}{staleness_note}{user_type_context}
 
 HOW TO RESPOND:
 - Actually understand what the user is saying. If they express grief, fear, or pain, acknowledge it directly. Don't just ask another question.
@@ -283,6 +299,7 @@ async def generate_ketamine_reply_node(state: KetamineAgentState) -> dict:
         safety_triggered=state.get("safety_triggered", False),
         journal_consent=state.get("journal_consent", True),
         stale_state=state.get("stale_state", False),
+        user_type=state.get("user_type", "default"),
     )
 
     history = await get_chat_history(state["session_id"])
