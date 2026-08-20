@@ -209,7 +209,7 @@ async def therapy_chat(request: TherapyChatRequest):
     if user_context_str:
         print(f"User context: {user_context_str}")
 
-    # 4. Identify user type and check freshness via Dashboard API
+    # 4. Identify user type via Dashboard API
     stale_state = False
     user_email = request.user_context.get("email", "")
     user_name = request.user_context.get("name", "")
@@ -217,43 +217,8 @@ async def therapy_chat(request: TherapyChatRequest):
 
     if user_email:
         from app.services.dashboard_service import identify_user_type
-        user_type, dashboard_data = await identify_user_type(user_email)
+        user_type = await identify_user_type(user_email)
         print(f"[ROUTING] User {user_email} identified as: {user_type}")
-
-        if dashboard_data and dashboard_data.get("last_login"):
-            last_login_str = dashboard_data["last_login"]
-            try:
-                if isinstance(last_login_str, str):
-                    last_login = datetime.fromisoformat(last_login_str.replace("Z", "+00:00"))
-                else:
-                    last_login = last_login_str
-                days_since = (datetime.utcnow() - last_login.replace(tzinfo=None)).days
-                if days_since > 30:
-                    stale_state = True
-                    print(f"[FRESHNESS] {user_type} {user_email} — stale ({days_since} days)")
-            except Exception as e:
-                print(f"[FRESHNESS] Error parsing last_login: {e}")
-
-        # Enrich user context with Dashboard data
-        if dashboard_data and user_type == "patient":
-            extras = []
-            if dashboard_data.get("diagnosis"):
-                extras.append(f"Diagnosis: {dashboard_data['diagnosis']}")
-            if dashboard_data.get("therapist"):
-                extras.append(f"Therapist: {dashboard_data['therapist']}")
-            if dashboard_data.get("sessions_completed") is not None:
-                extras.append(f"Sessions completed: {dashboard_data['sessions_completed']}/{dashboard_data.get('total_sessions', '?')}")
-            if extras:
-                user_context_str = (user_context_str + "\n" + "\n".join(extras)) if user_context_str else "\n".join(extras)
-
-        elif dashboard_data and user_type == "student":
-            extras = []
-            if dashboard_data.get("program"):
-                extras.append(f"Program: {dashboard_data['program']}")
-            if dashboard_data.get("enrollment_year"):
-                extras.append(f"Enrollment year: {dashboard_data['enrollment_year']}")
-            if extras:
-                user_context_str = (user_context_str + "\n" + "\n".join(extras)) if user_context_str else "\n".join(extras)
 
     # 5. Run ketamine agent with persona profile + user context
     print("Running ketamine agent...")

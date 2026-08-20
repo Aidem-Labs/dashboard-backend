@@ -2,15 +2,15 @@ import httpx
 from app.config import DASHBOARD_URL
 
 
-async def identify_user_type(email: str) -> tuple[str, dict | None]:
+async def identify_user_type(email: str) -> str:
     """Call the LMN8-Dashboard API to identify whether an email belongs to
     a patient, student, or neither.
 
-    Returns ("patient", {data}), ("student", {data}), or ("default", None).
-    Failures always return ("default", None) — never breaks chat.
+    Returns "patient", "student", or "default".
+    Failures always return "default" — never breaks chat.
     """
     if not email:
-        return ("default", None)
+        return "default"
 
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -21,13 +21,11 @@ async def identify_user_type(email: str) -> tuple[str, dict | None]:
 
         if resp.status_code != 200:
             print(f"[DASHBOARD] identify-user returned {resp.status_code}")
-            return ("default", None)
+            return "default"
 
         body = resp.json()
-        user_type = body.get("user_type", "default")
-        data = body.get("data")
-        return (user_type, data)
+        return body.get("user_type", "default")
 
     except Exception as e:
         print(f"[DASHBOARD] identify-user error: {e}")
-        return ("default", None)
+        return "default"
