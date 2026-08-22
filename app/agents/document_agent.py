@@ -39,6 +39,7 @@ class KetamineAgentState(TypedDict):
     journal_consent: bool
     stale_state: bool
     user_type: str
+    country_type: str
 
 
 SAFETY_KEYWORDS = [
@@ -72,9 +73,9 @@ SCOPE_REFUSAL = (
 )
 
 
-def _build_ketamine_system_prompt(chunks: list[dict], persona_profile: str = "", user_context_str: str = "", safety_triggered: bool = False, journal_consent: bool = True, stale_state: bool = False, user_type: str = "default") -> str:
+def _build_ketamine_system_prompt(chunks: list[dict], persona_profile: str = "", user_context_str: str = "", safety_triggered: bool = False, journal_consent: bool = True, stale_state: bool = False, user_type: str = "default", country_type: str = "US") -> str:
     if chunks and not safety_triggered:
-        doc_context = "\n\n--- KNOWLEDGE BASE ---\n"
+        doc_context = "\n\n--- THERAPEUTIC KNOWLEDGE ---\nThe following information comes from your clinical knowledge base. Use it to answer the user's question directly and specifically when it's relevant.\n"
         for chunk in chunks:
             source = chunk.get('file_name', 'Unknown Source')
             doc_context += f"\nSOURCE: {source}\nCONTENT: {chunk['content']}\n"
@@ -112,11 +113,25 @@ reference coursework, academic challenges, or program activities alongside emoti
 topics. Support them holistically — acknowledge both academic and emotional experience.
 Focus on their well-being and personal growth."""
 
+    country_context = ""
+    if country_type:
+        country_context = f"\n\n--- COUNTRY CONTEXT ---\nThis user is located in {country_type}. Adapt your guidance, examples, and recommendations to be relevant to their region."
+
+    if not journal_consent:
+        consent_note = """
+The patient has NOT allowed access to their journal entries. You cannot see them.
+If the patient asks about their journal entries — like "what did I write yesterday?" or "do you know what happened to me?" — tell them:
+"I can't see your journal entries because you've turned off journal access in your settings. You can turn it back on anytime if you'd like."
+Do NOT pretend you can see them. Be honest."""
+    else:
+        consent_note = ""
+
     return f"""You are a warm, genuine friend — someone who truly listens and responds like a real human would. Your tone is caring, direct, and authentic. Never clinical, never robotic, never like a therapist asking follow-up questions.
 
 {persona_section}
-{user_section}{crisis_note}{staleness_note}{user_type_context}
-
+{user_section}{crisis_note}{staleness_note}{user_type_context}{country_context}
+{doc_context}
+{consent_note}
 HOW TO RESPOND:
 - Actually understand what the user is saying. If they express grief, fear, or pain, acknowledge it directly. Don't just ask another question.
 - Be a solid friend. Sometimes people need to hear the truth, not another "how does that make you feel?"
@@ -195,21 +210,8 @@ Example: "[BIAS]I'm here with you. What's on your mind?"
 GUIDELINES:
 - Never give a lecture. Never list bullet points unless they ask for specific information.
 - If you don't know something, say so plainly.
-- Draw from the knowledge base when it's relevant, but weave it in naturally — don't announce sources.
-- Always treat the person as intelligent and capable.
-
-JOURNAL ACCESS:"""
-    if not journal_consent:
-        consent_note = """
-The patient has NOT allowed access to their journal entries. You cannot see them.
-If the patient asks about their journal entries — like "what did I write yesterday?" or "do you know what happened to me?" — tell them:
-"I can't see your journal entries because you've turned off journal access in your settings. You can turn it back on anytime if you'd like."
-Do NOT pretend you can see them. Be honest."""
-    else:
-        consent_note = ""
-    return f"""You are a warm, genuine friend — someone who truly listens and responds like a real human would. Your tone is caring, direct, and authentic. Never clinical, never robotic, never like a therapist asking follow-up questions.
-{consent_note}
-{user_context_str}{doc_context}"""
+- If THERAPEUTIC KNOWLEDGE is provided above, use it to answer the user's question directly. Do not say you don't have access when the knowledge is right there.
+- Always treat the person as intelligent and capable."""
 
 
 async def safety_check_node(state: KetamineAgentState) -> dict:
@@ -300,6 +302,7 @@ async def generate_ketamine_reply_node(state: KetamineAgentState) -> dict:
         journal_consent=state.get("journal_consent", True),
         stale_state=state.get("stale_state", False),
         user_type=state.get("user_type", "default"),
+        country_type=state.get("country_type", "US"),
     )
 
     history = await get_chat_history(state["session_id"])

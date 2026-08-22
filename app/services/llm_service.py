@@ -47,7 +47,7 @@ class HuggingFaceLLM:
         payload = {
             "model": self.model,
             "messages": messages,
-            "max_tokens": 500,
+            "max_tokens": 300,
             "temperature": 0.7,
         }
 
@@ -79,7 +79,7 @@ class HuggingFaceLLM:
         payload = {
             "model": self.model,
             "messages": messages,
-            "max_tokens": 500,
+            "max_tokens": 300,
             "temperature": 0.7,
         }
         

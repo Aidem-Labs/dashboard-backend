@@ -7,6 +7,8 @@ from typing import Any
 from uuid import uuid4
 from app.models.schemas import ChatResponse
 from app.agents.document_agent import build_ketamine_agent_graph
+from app.agents.patient_agent import build_patient_agent_graph
+from app.agents.student_agent import build_student_agent_graph
 from app.services.profile_service import get_multiple_celebrity_profiles
 from app.services.tweet_service import fetch_celebrity_tweets
 from app.services import session_service
@@ -20,6 +22,8 @@ UUID_PATTERN = re.compile(
 router = APIRouter(prefix="/api", tags=["therapy-chat"])
 
 ketamine_graph = build_ketamine_agent_graph()
+patient_graph = build_patient_agent_graph()
+student_graph = build_student_agent_graph()
 
 
 class TherapyChatRequest(BaseModel):
@@ -28,6 +32,8 @@ class TherapyChatRequest(BaseModel):
     onboarding_data: dict[str, Any] = {}
     user_context: dict[str, Any] = {}
     journal_consent: bool = True
+    user_type: str = "default"
+    country_type: str = "US"
 
 
 class PrefetchPersonaRequest(BaseModel):
@@ -209,37 +215,86 @@ async def therapy_chat(request: TherapyChatRequest):
     if user_context_str:
         print(f"User context: {user_context_str}")
 
-    # 4. Identify user type via Dashboard API
+    # 4. User type — sent directly from the app (detected at login, stored in AuthContext)
     stale_state = False
     user_email = request.user_context.get("email", "")
     user_name = request.user_context.get("name", "")
-    user_type = "default"
+    user_type = request.user_type if request.user_type in ("patient", "student") else "default"
 
-    if user_email:
-        from app.services.dashboard_service import identify_user_type
-        user_type = await identify_user_type(user_email)
-        print(f"[ROUTING] User {user_email} identified as: {user_type}")
+    # 5. Run the appropriate agent based on user type
+    if user_type == "student":
+        print("\n" + "="*80)
+        print("[AGENT ROUTING] STUDENT AGENT ACTIVATED")
+        print(f"   User: {user_name} ({user_email})")
+        print(f"   Country: {request.country_type}")
+        print(f"   user_type received: {request.user_type}")
+        print("="*80)
+        result = await student_graph.ainvoke({
+            "session_id": actual_session_id,
+            "user_message": request.message,
+            "assistant_reply": "",
+            "safety_triggered": False,
+            "out_of_scope": False,
+            "sources": [],
+            "persona_profile": persona_profile,
+            "user_context_str": user_context_str,
+            "user_email": user_email,
+            "user_name": user_name,
+            "journal_consent": journal_consent,
+            "stale_state": stale_state,
+            "knowledge_context": "",
+            "country_type": request.country_type,
+        })
+    elif user_type == "patient":
+        print("\n" + "="*80)
+        print("[AGENT ROUTING] PATIENT AGENT ACTIVATED")
+        print(f"   User: {user_name} ({user_email})")
+        print(f"   Country: {request.country_type}")
+        print(f"   user_type received: {request.user_type}")
+        print("="*80)
+        result = await patient_graph.ainvoke({
+            "session_id": actual_session_id,
+            "user_message": request.message,
+            "assistant_reply": "",
+            "safety_triggered": False,
+            "out_of_scope": False,
+            "sources": [],
+            "persona_profile": persona_profile,
+            "user_context_str": user_context_str,
+            "user_email": user_email,
+            "user_name": user_name,
+            "journal_consent": journal_consent,
+            "stale_state": stale_state,
+            "knowledge_context": "",
+            "country_type": request.country_type,
+        })
+    else:
+        print("\n" + "="*80)
+        print("[AGENT ROUTING] DEFAULT KETAMINE AGENT ACTIVATED")
+        print(f"   User: {user_name} ({user_email})")
+        print(f"   Country: {request.country_type}")
+        print(f"   user_type received: {request.user_type}")
+        print("="*80)
+        result = await ketamine_graph.ainvoke({
+            "session_id": actual_session_id,
+            "documents": [],
+            "user_message": request.message,
+            "assistant_reply": "",
+            "safety_triggered": False,
+            "out_of_scope": False,
+            "sources": [],
+            "persona_profile": persona_profile,
+            "user_context_str": user_context_str,
+            "user_email": user_email,
+            "user_name": user_name,
+            "journal_consent": journal_consent,
+            "stale_state": stale_state,
+            "user_type": user_type,
+            "country_type": request.country_type,
+        })
 
-    # 5. Run ketamine agent with persona profile + user context
-    print("Running ketamine agent...")
-    result = await ketamine_graph.ainvoke({
-        "session_id": actual_session_id,
-        "documents": [],
-        "user_message": request.message,
-        "assistant_reply": "",
-        "safety_triggered": False,
-        "out_of_scope": False,
-        "sources": [],
-        "persona_profile": persona_profile,
-        "user_context_str": user_context_str,
-        "user_email": user_email,
-        "user_name": user_name,
-        "journal_consent": journal_consent,
-        "stale_state": stale_state,
-        "user_type": user_type,
-    })
-
-    print(f"Response: {result['assistant_reply'][:80]}...")
+    agent_name = "STUDENT" if user_type == "student" else "PATIENT" if user_type == "patient" else "DEFAULT/KETAMINE"
+    print(f"\n[RESPONSE] [{agent_name} AGENT] {result['assistant_reply'][:120]}...")
     print("="*80)
 
     return ChatResponse(
