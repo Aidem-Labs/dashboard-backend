@@ -34,6 +34,7 @@ class TherapyChatRequest(BaseModel):
     journal_consent: bool = True
     user_type: str = "default"
     country_type: str = "US"
+    memory_context: str = ""
 
 
 class PrefetchPersonaRequest(BaseModel):
@@ -210,6 +211,9 @@ async def therapy_chat(request: TherapyChatRequest):
     # 3. Build user context (respect journal consent)
     journal_consent = request.journal_consent
     user_context_str = _build_user_context_str(request.user_context, journal_consent)
+    if request.memory_context:
+        user_context_str = user_context_str + "\n\n" + request.memory_context[:2400]
+        print("Long-term memory loaded from previous sessions")
     if not journal_consent:
         print("Journal consent: OFF — skipping journal entries")
     if user_context_str:

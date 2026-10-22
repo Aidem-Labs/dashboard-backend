@@ -20,6 +20,7 @@ class ChatRequest(BaseModel):
     session_id: str
     message: str
     onboarding_data: dict[str, Any] = {}
+    memory_context: str = ""
 
 
 class ChatResponse(BaseModel):

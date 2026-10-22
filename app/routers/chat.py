@@ -113,7 +113,11 @@ async def chat(request: ChatRequest):
     
     # Build user context for the agent
     user_context = _build_user_context(onboarding_data)
-    
+
+    if request.memory_context:
+        user_context = user_context + "\n\n" + request.memory_context[:2400]
+        print("Long-term memory loaded from previous sessions")
+
     print(f"Active personas: {', '.join(personas)}")
     if user_context:
         print(f"User context loaded from onboarding")
