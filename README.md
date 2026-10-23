@@ -1,4 +1,4 @@
-# Eluminate Backend
+# METAT8 Backend
 
 AI Persona Chat Agent - Responds like user's chosen celebrities using their tweets.
 
